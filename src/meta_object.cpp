@@ -50,14 +50,6 @@ AbstractMetaObjectBase::AbstractMetaObjectBase(
     this, baseClassName().c_str(), className().c_str(), getAssociatedLibraryPath().c_str());
 }
 
-AbstractMetaObjectBase::~AbstractMetaObjectBase()
-{
-  CONSOLE_BRIDGE_logDebug(
-    "class_loader.impl.AbstractMetaObjectBase: "
-    "Destroying MetaObject %p (base = %s, derived = %s, library path = %s)",
-    this, baseClassName().c_str(), className().c_str(), getAssociatedLibraryPath().c_str());
-}
-
 std::string AbstractMetaObjectBase::className() const
 {
   return class_name_;

@@ -35,6 +35,7 @@
 #include <cassert>
 #include <cstddef>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace class_loader
@@ -164,11 +165,13 @@ MetaObjectVector allMetaObjects()
 }
 
 MetaObjectVector
-filterAllMetaObjectsOwnedBy(const MetaObjectVector & to_filter, const ClassLoader * owner)
+filterAllMetaObjectsOwnedBy(
+  const MetaObjectVector & to_filter,
+  std::shared_ptr<const ClassLoader> owner)
 {
   MetaObjectVector filtered_objs;
   for (auto & f : to_filter) {
-    if (f->isOwnedBy(owner)) {
+    if (f->isOwnedBy(owner.get())) {
       filtered_objs.push_back(f);
     }
   }
@@ -189,7 +192,7 @@ filterAllMetaObjectsAssociatedWithLibrary(
 }
 
 MetaObjectVector
-allMetaObjectsForClassLoader(const ClassLoader * owner)
+allMetaObjectsForClassLoader(std::shared_ptr<const ClassLoader> owner)
 {
   return filterAllMetaObjectsOwnedBy(allMetaObjects(), owner);
 }
@@ -201,46 +204,36 @@ allMetaObjectsForLibrary(const std::string & library_path)
 }
 
 MetaObjectVector
-allMetaObjectsForLibraryOwnedBy(const std::string & library_path, const ClassLoader * owner)
+allMetaObjectsForLibraryOwnedBy(
+  const std::string & library_path,
+  std::shared_ptr<const ClassLoader> owner)
 {
   return filterAllMetaObjectsOwnedBy(allMetaObjectsForLibrary(library_path), owner);
 }
 
-void insertMetaObjectIntoGraveyard(AbstractMetaObjectBase * meta_obj)
+void insertMetaObjectIntoGraveyard(std::shared_ptr<AbstractMetaObjectBase> meta_obj)
 {
   CONSOLE_BRIDGE_logDebug(
     "class_loader.impl: "
     "Inserting MetaObject (class = %s, base_class = %s, ptr = %p) into graveyard",
     meta_obj->className().c_str(), meta_obj->baseClassName().c_str(),
-    reinterpret_cast<void *>(meta_obj));
-  getMetaObjectGraveyard().push_back(meta_obj);
+    reinterpret_cast<void *>(meta_obj.get()));
+  getMetaObjectGraveyard().push_back(std::move(meta_obj));
 }
 
 void destroyMetaObjectsForLibrary(
   const std::string & library_path, FactoryMap & factories, const ClassLoader * loader)
 {
-  FactoryMap::iterator factory_itr = factories.begin();
-  while (factory_itr != factories.end()) {
-    AbstractMetaObjectBase * meta_obj = factory_itr->second;
+  CONSOLE_BRIDGE_logDebug(
+    "class_loader.impl: destroyMetaObjectsForLibrary.\n");
+  for (auto factory_itr =
+    factories.cbegin(); factory_itr != factories.cend() /* not hoisted */; /* no increment */)
+  {
+    auto & meta_obj = factory_itr->second;
     if (meta_obj->getAssociatedLibraryPath() == library_path && meta_obj->isOwnedBy(loader)) {
       meta_obj->removeOwningClassLoader(loader);
       if (!meta_obj->isOwnedByAnybody()) {
-        FactoryMap::iterator factory_itr_copy = factory_itr;
-        factory_itr++;
-        // TODO(mikaelarguedas) fix this when branching out for melodic
-        // Note: map::erase does not return iterator like vector::erase does.
-        // Hence the ugliness of this code and a need for copy. Should be fixed in next C++ revision
-        factories.erase(factory_itr_copy);
-
-        // Insert into graveyard
-        // We remove the metaobject from its factory map, but we don't destroy it...instead it
-        // saved to a "graveyard" to the side.
-        // This is due to our static global variable initialization problem that causes factories
-        // to not be registered when a library is closed and then reopened.
-        // This is because it's truly not closed due to the use of global symbol binding i.e.
-        // calling dlopen with RTLD_GLOBAL instead of RTLD_LOCAL.
-        // We require using the former as the which is required to support RTTI
-        insertMetaObjectIntoGraveyard(meta_obj);
+        factory_itr = factories.erase(factory_itr);
       } else {
         ++factory_itr;
       }
@@ -301,7 +294,7 @@ bool isLibraryLoadedByAnybody(const std::string & library_path)
   }
 }
 
-bool isLibraryLoaded(const std::string & library_path, ClassLoader * loader)
+bool isLibraryLoaded(const std::string & library_path, std::shared_ptr<const ClassLoader> loader)
 {
   bool is_lib_loaded_by_anyone = isLibraryLoadedByAnybody(library_path);
   size_t num_meta_objs_for_lib = allMetaObjectsForLibrary(library_path).size();
@@ -314,7 +307,7 @@ bool isLibraryLoaded(const std::string & library_path, ClassLoader * loader)
   return is_lib_loaded_by_anyone && are_meta_objs_bound_to_loader;
 }
 
-std::vector<std::string> getAllLibrariesUsedByClassLoader(const ClassLoader * loader)
+std::vector<std::string> getAllLibrariesUsedByClassLoader(std::shared_ptr<const ClassLoader> loader)
 {
   MetaObjectVector all_loader_meta_objs = allMetaObjectsForClassLoader(loader);
   std::vector<std::string> all_libs;
@@ -339,7 +332,7 @@ void addClassLoaderOwnerForAllExistingMetaObjectsForLibrary(
       "class_loader.impl: "
       "Tagging existing MetaObject %p (base = %s, derived = %s) with "
       "class loader %p (library path = %s).",
-      reinterpret_cast<void *>(meta_obj), meta_obj->baseClassName().c_str(),
+      reinterpret_cast<void *>(meta_obj.get()), meta_obj->baseClassName().c_str(),
       meta_obj->className().c_str(),
       reinterpret_cast<void *>(loader),
       nullptr == loader ? loader->getLibraryPath().c_str() : "NULL");
@@ -359,7 +352,7 @@ void revivePreviouslyCreateMetaobjectsFromGraveyard(
         "class_loader.impl: "
         "Resurrected factory metaobject from graveyard, class = %s, base_class = %s ptr = %p..."
         "bound to ClassLoader %p (library path = %s)",
-        obj->className().c_str(), obj->baseClassName().c_str(), reinterpret_cast<void *>(obj),
+        obj->className().c_str(), obj->baseClassName().c_str(), reinterpret_cast<void *>(obj.get()),
         reinterpret_cast<void *>(loader),
         nullptr == loader ? loader->getLibraryPath().c_str() : "NULL");
 
@@ -382,13 +375,13 @@ void purgeGraveyardOfMetaobjects(
   MetaObjectVector::iterator itr = graveyard.begin();
 
   while (itr != graveyard.end()) {
-    AbstractMetaObjectBase * obj = *itr;
+    auto obj = *itr;
     if (obj->getAssociatedLibraryPath() == library_path) {
       CONSOLE_BRIDGE_logDebug(
         "class_loader.impl: "
         "Purging factory metaobject from graveyard, class = %s, base_class = %s ptr = %p.."
         ".bound to ClassLoader %p (library path = %s)",
-        obj->className().c_str(), obj->baseClassName().c_str(), reinterpret_cast<void *>(obj),
+        obj->className().c_str(), obj->baseClassName().c_str(), reinterpret_cast<void *>(obj.get()),
         reinterpret_cast<void *>(loader),
         nullptr == loader ? loader->getLibraryPath().c_str() : "NULL");
 
@@ -407,7 +400,8 @@ void purgeGraveyardOfMetaobjects(
             "class_loader.impl: "
             "Also destroying metaobject %p (class = %s, base_class = %s, library_path = %s) "
             "in addition to purging it from graveyard.",
-            reinterpret_cast<void *>(obj), obj->className().c_str(), obj->baseClassName().c_str(),
+            reinterpret_cast<void *>(obj.get()),
+            obj->className().c_str(), obj->baseClassName().c_str(),
             obj->getAssociatedLibraryPath().c_str());
 #ifndef _WIN32
 #pragma GCC diagnostic push
@@ -584,10 +578,10 @@ void printDebugInfoToScreen()
   printf("--------------------------------------------------------------------------------\n");
   MetaObjectVector meta_objs = allMetaObjects();
   for (size_t c = 0; c < meta_objs.size(); c++) {
-    AbstractMetaObjectBase * obj = meta_objs.at(c);
+    auto obj = meta_objs.at(c);
     printf("Metaobject %zu (ptr = %p):\n TypeId = %s\n Associated Library = %s\n",
       c,
-      reinterpret_cast<void *>(obj),
+      reinterpret_cast<void *>(obj.get()),
       (typeid(*obj).name()),
       obj->getAssociatedLibraryPath().c_str());
 

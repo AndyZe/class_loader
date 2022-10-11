@@ -64,11 +64,9 @@ public:
    */
   AbstractMetaObjectBase(const std::string & class_name, const std::string & base_class_name);
   /**
-   * @brief Destructor for the class. THIS MUST NOT BE VIRTUAL AND OVERRIDDEN BY
-   * TEMPLATE SUBCLASSES, OTHERWISE THEY WILL PULL IN A REDUNDANT METAOBJECT
-   * DESTRUCTOR OUTSIDE OF libclass_loader WITHIN THE PLUGIN LIBRARY! T
+   * @brief Default virtual destructor
    */
-  ~AbstractMetaObjectBase();
+  virtual ~AbstractMetaObjectBase() = default;
 
   /**
    * @brief Gets the literal name of the class.
@@ -125,12 +123,8 @@ public:
   ClassLoaderVector getAssociatedClassLoaders();
 
 protected:
-  /**
-   * This is needed to make base class polymorphic (i.e. have a vtable)
-   */
-  virtual void dummyMethod() {}
+  typedef std::vector<class_loader::ClassLoader *> ClassLoaderVector;
 
-protected:
   ClassLoaderVector associated_class_loaders_;
   std::string associated_library_path_;
   std::string base_class_name_;

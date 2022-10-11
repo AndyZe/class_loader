@@ -46,8 +46,8 @@ namespace class_loader
 {
 
 typedef std::string LibraryPath;
-typedef std::map<LibraryPath, class_loader::ClassLoader *> LibraryToClassLoaderMap;
-typedef std::vector<ClassLoader *> ClassLoaderVector;
+typedef std::map<LibraryPath, std::shared_ptr<class_loader::ClassLoader>> LibraryToClassLoaderMap;
+typedef std::vector<std::shared_ptr<ClassLoader>> ClassLoaderVector;
 
 /**
 * @class MultiLibraryClassLoader
@@ -81,7 +81,7 @@ public:
       "class_loader::MultiLibraryClassLoader: "
       "Attempting to create instance of class type %s.",
       class_name.c_str());
-    ClassLoader * loader = getClassLoaderForClass<Base>(class_name);
+    std::shared_ptr<ClassLoader> loader = getClassLoaderForClass<Base>(class_name);
     if (nullptr == loader) {
       throw class_loader::CreateClassException(
               "MultiLibraryClassLoader: Could not create object of class type " +
@@ -146,7 +146,7 @@ public:
   boost::shared_ptr<Base>
   createInstance(const std::string & class_name, const std::string & library_path)
   {
-    ClassLoader * loader = getClassLoaderForLibrary(library_path);
+    std::shared_ptr<ClassLoader> loader = getClassLoaderForLibrary(library_path);
     if (nullptr == loader) {
       throw class_loader::NoClassLoaderExistsException(
               "Could not create instance as there is no ClassLoader in "
@@ -166,7 +166,7 @@ public:
     CONSOLE_BRIDGE_logDebug(
       "class_loader::MultiLibraryClassLoader: Attempting to create instance of class type %s.",
       class_name.c_str());
-    ClassLoader * loader = getClassLoaderForClass<Base>(class_name);
+    std::shared_ptr<ClassLoader> loader = getClassLoaderForClass<Base>(class_name);
     if (nullptr == loader) {
       throw class_loader::CreateClassException(
               "MultiLibraryClassLoader: Could not create object of class type " + class_name +
@@ -185,7 +185,7 @@ public:
   ClassLoader::UniquePtr<Base>
   createUniqueInstance(const std::string & class_name, const std::string & library_path)
   {
-    ClassLoader * loader = getClassLoaderForLibrary(library_path);
+    std::shared_ptr<ClassLoader> loader = getClassLoaderForLibrary(library_path);
     if (nullptr == loader) {
       throw class_loader::NoClassLoaderExistsException(
               "Could not create instance as there is no ClassLoader in "
@@ -225,7 +225,7 @@ public:
   template<class Base>
   Base * createUnmanagedInstance(const std::string & class_name, const std::string & library_path)
   {
-    ClassLoader * loader = getClassLoaderForLibrary(library_path);
+    std::shared_ptr<ClassLoader> loader = getClassLoaderForLibrary(library_path);
     if (nullptr == loader) {
       throw class_loader::NoClassLoaderExistsException(
               "Could not create instance as there is no ClassLoader in MultiLibraryClassLoader "
@@ -281,7 +281,7 @@ public:
   template<class Base>
   std::vector<std::string> getAvailableClassesForLibrary(const std::string & library_path)
   {
-    ClassLoader * loader = getClassLoaderForLibrary(library_path);
+    std::shared_ptr<ClassLoader> loader = getClassLoaderForLibrary(library_path);
     if (nullptr == loader) {
       throw class_loader::NoClassLoaderExistsException(
               "There is no ClassLoader in MultiLibraryClassLoader bound to library " +
@@ -320,7 +320,7 @@ private:
    * @param library_path - the library from which we want to create the plugin
    * @return A pointer to the ClassLoader*, == nullptr if not found
    */
-  ClassLoader * getClassLoaderForLibrary(const std::string & library_path);
+  std::shared_ptr<ClassLoader> getClassLoaderForLibrary(const std::string & library_path);
 
   /**
    * @brief Gets a handle to the class loader corresponding to a specific class
@@ -328,7 +328,7 @@ private:
    * @return A pointer to the ClassLoader*, == nullptr if not found
    */
   template<typename Base>
-  ClassLoader * getClassLoaderForClass(const std::string & class_name)
+  std::shared_ptr<ClassLoader> getClassLoaderForClass(const std::string & class_name)
   {
     ClassLoaderVector loaders = getAllAvailableClassLoaders();
     for (ClassLoaderVector::iterator i = loaders.begin(); i != loaders.end(); ++i) {
@@ -351,6 +351,8 @@ private:
    * @brief Destroys all ClassLoaders
    */
   void shutdownAllClassLoaders();
+
+  std::unique_ptr<MultiLibraryClassLoaderImpl> impl_;
 
 private:
   bool enable_ondemand_loadunload_;

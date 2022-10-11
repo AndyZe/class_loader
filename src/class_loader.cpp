@@ -38,6 +38,14 @@ namespace class_loader
 
 bool ClassLoader::has_unmananged_instance_been_created_ = false;
 
+std::shared_ptr<ClassLoader> ClassLoader::Make(
+  const std::string & library_path,
+  bool ondemand_load_unload)
+{
+  // Not using make_shared because the constructor for ClassLoader is private
+  return std::shared_ptr<ClassLoader>(new ClassLoader{library_path, ondemand_load_unload});
+}
+
 bool ClassLoader::hasUnmanagedInstanceBeenCreated()
 {
   return ClassLoader::has_unmananged_instance_been_created_;
@@ -87,7 +95,7 @@ ClassLoader::~ClassLoader()
 
 bool ClassLoader::isLibraryLoaded()
 {
-  return class_loader::impl::isLibraryLoaded(getLibraryPath(), this);
+  return class_loader::impl::isLibraryLoaded(getLibraryPath(), shared_from_this());
 }
 
 bool ClassLoader::isLibraryLoadedByAnyClassloader()

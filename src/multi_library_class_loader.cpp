@@ -30,6 +30,7 @@
 #include "class_loader/multi_library_class_loader.hpp"
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -37,7 +38,8 @@ namespace class_loader
 {
 
 MultiLibraryClassLoader::MultiLibraryClassLoader(bool enable_ondemand_loadunload)
-: enable_ondemand_loadunload_(enable_ondemand_loadunload)
+: enable_ondemand_loadunload_(enable_ondemand_loadunload),
+impl_(std::make_unique<MultiLibraryClassLoaderImpl>())
 {
 }
 
@@ -57,7 +59,8 @@ std::vector<std::string> MultiLibraryClassLoader::getRegisteredLibraries()
   return libraries;
 }
 
-ClassLoader * MultiLibraryClassLoader::getClassLoaderForLibrary(const std::string & library_path)
+std::shared_ptr<ClassLoader> MultiLibraryClassLoader::getClassLoaderForLibrary(
+  const std::string & library_path)
 {
   LibraryToClassLoaderMap::iterator itr = active_class_loaders_.find(library_path);
   if (itr != active_class_loaders_.end()) {
@@ -83,7 +86,7 @@ void MultiLibraryClassLoader::loadLibrary(const std::string & library_path)
 {
   if (!isLibraryAvailable(library_path)) {
     active_class_loaders_[library_path] =
-      new class_loader::ClassLoader(library_path, isOnDemandLoadUnloadEnabled());
+      class_loader::ClassLoader::Make(library_path, isOnDemandLoadUnloadEnabled());
   }
 }
 
@@ -101,7 +104,7 @@ int MultiLibraryClassLoader::unloadLibrary(const std::string & library_path)
   int remaining_unloads = 0;
   LibraryToClassLoaderMap::iterator itr = active_class_loaders_.find(library_path);
   if (itr != active_class_loaders_.end()) {
-    ClassLoader * loader = itr->second;
+    std::shared_ptr<ClassLoader> loader = itr->second;
     if (0 == (remaining_unloads = loader->unloadLibrary())) {
       delete (loader);
       active_class_loaders_.erase(itr);
